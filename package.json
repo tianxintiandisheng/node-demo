@@ -6,7 +6,9 @@
     "my-tool": "./index.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "release": "standard-version",
+    "release:dry": "standard-version --dry-run"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +19,7 @@
     "fs": "0.0.1-security"
   },
   "devDependencies": {
-    "eslint": "^8.57.0"
+    "eslint": "^8.57.0",
+    "standard-version": "^9.5.0"
   }
 }
