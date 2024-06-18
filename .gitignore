@@ -128,3 +128,9 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+# 忽略指定文件夹
+/node_modules
+
+# 忽略指定文件
+chapters.txt
+

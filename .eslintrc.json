@@ -1,0 +1,50 @@
+{
+  "env": {
+    "browser": false, // 禁用浏览器环境的全局变量
+    "es2022": true, // 启用ES2022特性
+    "node": true // 启用Node.js环境的全局变量和语法检测
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": false // 如果项目包含JSX，应改为true并安装相应的解析器和插件
+    }
+  },
+  "plugins": [
+    // 可以添加额外的插件，如"import"用于更严格的import/export语句检查
+    // "import"
+  ],
+  "rules": {
+    // 基础规则
+    "no-console": "warn",
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    
+    // 代码风格
+    "indent": ["error", 2],
+    "quotes": ["warn", "double"],
+    "semi": ["error", "always"],
+    "comma-dangle": ["error", "never"], // 对象或数组最后一个元素后面不允许有逗号
+    
+    // 提高代码质量
+    "eqeqeq": "error",
+    "no-debugger": "error",
+    "no-undef": "error",
+    "no-use-before-define": ["error", { "functions": false }],
+    "no-shadow": "error", // 防止变量被意外阴影遮蔽
+    
+    // 可能的错误
+    "no-unreachable": "error", // 禁止不可达代码
+    
+    // ES6+特性
+    "prefer-template": "error",
+    "arrow-body-style": ["error", "as-needed"],
+    "prefer-const": "error",
+    "prefer-destructuring": ["error", { "array": false, "object": true }],
+    
+    // 可读性和简洁性
+    "max-len": ["warn", { "code": 120 }], // 限制行宽，提高可读性
+    "camelcase": "error" // 变量和函数名使用驼峰命名法
+  
+  }
+}
