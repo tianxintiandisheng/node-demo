@@ -3,9 +3,9 @@ const cheerio = require("cheerio");
 const fs = require("fs").promises;
 
 const MAX_DEPTH = 10; // 设定最大递归深度
-const CHAPTER_LIST_URL = "http://m.ggdwx.net/book/107056/chapterlist"; // 列表目录
-const DELAY_MS = 10; // 延迟时间
-
+const CHAPTER_LIST_URL = "http://m.biquge.net/book/107056/chapterlist"; // 列表目录
+const DELAY_MS = 1; // 延迟时间
+const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 
 // 模拟延迟
 function delay() {
@@ -14,7 +14,7 @@ function delay() {
 
 async function fetchChapterList(url) {
   try {
-    const response = await  axios.get(url);
+    const response = await axios.get(url);
     const $ = cheerio.load(response.data);
     const chapterLinks = $("#listsss li a")
       .map((_, elem) => ({
@@ -41,7 +41,7 @@ async function fetchChapterContentAndNext(
     return "";
   }
   try {
-    const response = await  axios.get(chapterUrl);
+    const response = await axios.get(chapterUrl);
     const $ = cheerio.load(response.data);
 
     // 获取当前章节当前页内容
@@ -82,23 +82,48 @@ async function fetchChapterContentAndNext(
 }
 
 async function saveToFile(chapters) {
-  let allContent = "";
   const totalChapters = chapters.length;
+  const allContentPromises = [];
+
+  // 预先创建所有章节内容的Promise数组
   for (let index = 0; index < totalChapters; index++) {
     const item = chapters[index];
-    const fullChapterContent = await fetchChapterContentAndNext(
-      item.url,
-      item.chapterName
-    );
-    allContent += fullChapterContent;
-
-    // 计算并打印进度
-    const progress = ((index + 1) / totalChapters) * 100;
-    process.stdout.write(
-      `\r处理进度: ${progress.toFixed(2)}%  当前处理--${item.chapterName}`
+    allContentPromises.push(
+      fetchChapterContentAndNext(item.url, item.chapterName)
     );
   }
-  process.stdout.write("\n"); // 在完成所有章节处理后换行
+
+  // 使用Promise.all分批次处理Promise数组，控制并发数量
+  let allContent = "";
+  for (
+    let i = 0;
+    i < allContentPromises.length;
+    i += LIMIT_CONCURRENT_REQUESTS
+  ) {
+    // 取出一批Promise进行并发处理
+    const batchPromises = allContentPromises.slice(
+      i,
+      i + LIMIT_CONCURRENT_REQUESTS
+    );
+    await delay();
+    const batchResults = await Promise.all(
+      batchPromises.map((p) =>
+        p.catch((err) => console.error(`Error in batch: ${err}`))
+      )
+    );
+
+    // 将这批结果合并到allContent中
+    batchResults.forEach((content) => {
+      allContent += content || ""; // 确保错误处理后的内容仍能合并
+    });
+
+    // 计算并打印进度
+    const progress = ((i + LIMIT_CONCURRENT_REQUESTS) / totalChapters) * 100;
+    process.stdout.write(`\r处理进度: ${progress.toFixed(2)}%`);
+  }
+  process.stdout.write("\n"); // 完成所有章节处理后换行
+
+  // 清理并保存内容
   const cleanedStr = allContent.replace(
     /！「如章节缺失请退#出#阅#读#模#式」/g,
     ""
@@ -106,14 +131,13 @@ async function saveToFile(chapters) {
   await fs.writeFile("chapters.txt", cleanedStr, "utf8");
 }
 
-
 async function main() {
   const startTime = Date.now(); // 开始时间记录
 
   const chapterLinks = await fetchChapterList(CHAPTER_LIST_URL);
-  const chapterLinksTest = chapterLinks.slice(-4); // 小范围测试
-  console.log("🚀 ~ main ~ chapterLinks_test:", chapterLinksTest);
-  await saveToFile(chapterLinksTest);
+  // const chapterLinksTest = chapterLinks.slice(-2); // 小范围测试
+  // console.log("🚀 ~ main ~ chapterLinks_test:", chapterLinksTest);
+  await saveToFile(chapterLinks);
   const endTime = Date.now(); // 结束时间记录
   const totalTimeInSeconds = (endTime - startTime) / 1000; // 总耗时（秒）
 
@@ -121,3 +145,4 @@ async function main() {
 }
 
 main().catch(console.error);
+
