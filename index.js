@@ -7,6 +7,16 @@ const CHAPTER_LIST_URL = "http://m.ggdwx.net/book/107056/chapterlist"; // 列表
 const DELAY_MS = 1; // 延迟时间
 const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 
+// 创建一个带有默认配置的axios实例
+const axiosInstance = axios.create({
+  // 在这里设置全局的默认请求头,避免被服务器识别为爬虫并拒绝服务
+  headers: {
+    "User-Agent":
+      "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+    Referer: "https://tds-referer-url.com",
+  },
+});
+
 // 模拟延迟
 function delay() {
   return new Promise((resolve) => setTimeout(resolve, DELAY_MS));
@@ -14,12 +24,12 @@ function delay() {
 
 async function fetchChapterList(url) {
   try {
-    const response = await axios.get(url);
+    const response = await axiosInstance.get(url);
     const $ = cheerio.load(response.data);
     const chapterLinks = $("#listsss li a")
       .map((_, elem) => ({
         chapterName: $(elem).text(),
-        url: $(elem).attr("href")
+        url: $(elem).attr("href"),
       }))
       .get();
     return chapterLinks;
@@ -41,7 +51,7 @@ async function fetchChapterContentAndNext(
     return "";
   }
   try {
-    const response = await axios.get(chapterUrl);
+    const response = await axiosInstance.get(chapterUrl);
     const $ = cheerio.load(response.data);
 
     // 获取当前章节当前页内容
@@ -118,7 +128,11 @@ async function saveToFile(chapters) {
     });
 
     // 计算并打印进度
-    const progress = ((i + LIMIT_CONCURRENT_REQUESTS) / totalChapters) * 100;
+    const curChapterNum = i + LIMIT_CONCURRENT_REQUESTS;
+    const progress =
+      ((curChapterNum >= totalChapters ? totalChapters : curChapterNum) /
+        totalChapters) *
+      100;
     process.stdout.write(`\r处理进度: ${progress.toFixed(2)}%`);
   }
   process.stdout.write("\n"); // 完成所有章节处理后换行

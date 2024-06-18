@@ -24,7 +24,7 @@
     "indent": ["error", 2],
     "quotes": ["warn", "double"],
     "semi": ["error", "always"],
-    "comma-dangle": ["error", "never"], // 对象或数组最后一个元素后面不允许有逗号
+    "comma-dangle": ["warn", "never"], // 对象或数组最后一个元素后面不允许有逗号
     
     // 提高代码质量
     "eqeqeq": "error",
