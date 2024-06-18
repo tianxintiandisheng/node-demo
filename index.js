@@ -3,7 +3,7 @@ const cheerio = require("cheerio");
 const fs = require("fs").promises;
 
 const MAX_DEPTH = 10; // 设定最大递归深度
-const CHAPTER_LIST_URL = "http://m.biquge.net/book/107056/chapterlist"; // 列表目录
+const CHAPTER_LIST_URL = "http://m.ggdwx.net/book/107056/chapterlist"; // 列表目录
 const DELAY_MS = 1; // 延迟时间
 const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 
@@ -134,9 +134,12 @@ async function saveToFile(chapters) {
 async function main() {
   const startTime = Date.now(); // 开始时间记录
 
-  const chapterLinks = await fetchChapterList(CHAPTER_LIST_URL);
-  // const chapterLinksTest = chapterLinks.slice(-2); // 小范围测试
-  // console.log("🚀 ~ main ~ chapterLinks_test:", chapterLinksTest);
+  let chapterLinks = await fetchChapterList(CHAPTER_LIST_URL);
+  const argList = process.argv.slice(2); // 获取用户在命令行中输入的参数
+  if (argList.length > 0 && argList.includes("test")) {
+    // 小范围测试
+    chapterLinks = chapterLinks.slice(-3);
+  }
   await saveToFile(chapterLinks);
   const endTime = Date.now(); // 结束时间记录
   const totalTimeInSeconds = (endTime - startTime) / 1000; // 总耗时（秒）
@@ -145,4 +148,3 @@ async function main() {
 }
 
 main().catch(console.error);
-
