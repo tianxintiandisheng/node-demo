@@ -11,15 +11,14 @@ const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 const axiosInstance = axios.create({
   // 在这里设置全局的默认请求头,避免被服务器识别为爬虫并拒绝服务
   headers: {
-    "User-Agent":
-      "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
-    Referer: "https://tds-referer-url.com",
-  },
+    "User-Agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+    Referer: "https://tds-referer-url.com"
+  }
 });
 
 // 模拟延迟
 function delay() {
-  return new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+  return new Promise(resolve => setTimeout(resolve, DELAY_MS));
 }
 
 async function fetchChapterList(url) {
@@ -29,7 +28,7 @@ async function fetchChapterList(url) {
     const chapterLinks = $("#listsss li a")
       .map((_, elem) => ({
         chapterName: $(elem).text(),
-        url: $(elem).attr("href"),
+        url: $(elem).attr("href")
       }))
       .get();
     return chapterLinks;
@@ -39,11 +38,7 @@ async function fetchChapterList(url) {
   }
 }
 
-async function fetchChapterContentAndNext(
-  chapterUrl,
-  currentChapterName = "未知章节",
-  depth = 0
-) {
+async function fetchChapterContentAndNext(chapterUrl, currentChapterName = "未知章节", depth = 0) {
   if (depth >= MAX_DEPTH) {
     console.warn(`\n warn 达到最大递归深度 ${MAX_DEPTH}, 停止抓取后续章节.`);
     console.warn(`\n 错误章节名称:${currentChapterName}`);
@@ -58,15 +53,11 @@ async function fetchChapterContentAndNext(
     const content = $(".content dd").text();
 
     // 页面内是否存在下一章的按钮
-    const withNextButton = !!$('.pager a:contains("下一章")')
-      .first()
-      .attr("href");
-    const withEndButton = !!$('.pager a:contains("看完了")')
-      .first()
-      .attr("href");
+    const withNextButton = !!$('.pager a:contains("下一章")').first().attr("href");
+    const withEndButton = !!$('.pager a:contains("看完了")').first().attr("href");
     if (withNextButton || withEndButton) {
       // 下一章的按钮存在，说明当前章节已结束
-      return `${currentChapterName}\n\n${content}`;
+      return `${currentChapterName}${content}`;
     } else {
       // 下一章的按钮不存在，继续请求下一页的内容
       var parts = chapterUrl.split(/(\/[^\/]+)\.html$/);
@@ -78,12 +69,8 @@ async function fetchChapterContentAndNext(
         nextPageKey = `${urlArr[0]}_2`;
       }
       const nextPageLink = `${parts[0]}${nextPageKey}.html`;
-      const nextContent = await fetchChapterContentAndNext(
-        nextPageLink,
-        currentChapterName,
-        depth + 1
-      );
-      return `${content}\n\n---\n\n${nextContent}`;
+      const nextContent = await fetchChapterContentAndNext(nextPageLink, currentChapterName, depth + 1);
+      return `${content}${nextContent}`;
     }
   } catch (error) {
     console.error("Error fetching chapter content:", error);
@@ -93,56 +80,32 @@ async function fetchChapterContentAndNext(
 
 async function saveToFile(chapters) {
   const totalChapters = chapters.length;
-  const allContentPromises = [];
+  const allContentPromises = chapters.map(item => fetchChapterContentAndNext(item.url, item.chapterName));
 
-  // 预先创建所有章节内容的Promise数组
-  for (let index = 0; index < totalChapters; index++) {
-    const item = chapters[index];
-    allContentPromises.push(
-      fetchChapterContentAndNext(item.url, item.chapterName)
-    );
-  }
+  let allContent = ""; // 使用allContent累积内容
 
-  // 使用Promise.all分批次处理Promise数组，控制并发数量
-  let allContent = "";
-  for (
-    let i = 0;
-    i < allContentPromises.length;
-    i += LIMIT_CONCURRENT_REQUESTS
-  ) {
-    // 取出一批Promise进行并发处理
-    const batchPromises = allContentPromises.slice(
-      i,
-      i + LIMIT_CONCURRENT_REQUESTS
-    );
+  for (let i = 0; i < allContentPromises.length; i += LIMIT_CONCURRENT_REQUESTS) {
+    const batchPromises = allContentPromises.slice(i, i + LIMIT_CONCURRENT_REQUESTS);
     await delay();
+
     const batchResults = await Promise.all(
-      batchPromises.map((p) =>
-        p.catch((err) => console.error(`Error in batch: ${err}`))
-      )
+      batchPromises.map(p => p.catch(err => console.error(`Error in batch: ${err}`)))
     );
 
-    // 将这批结果合并到allContent中
-    batchResults.forEach((content) => {
-      allContent += content || ""; // 确保错误处理后的内容仍能合并
+    batchResults.forEach(content => {
+      allContent += content || "";
     });
 
-    // 计算并打印进度
-    const curChapterNum = i + LIMIT_CONCURRENT_REQUESTS;
-    const progress =
-      ((curChapterNum >= totalChapters ? totalChapters : curChapterNum) /
-        totalChapters) *
-      100;
+    // 使用allContent写入文件，每次完成一个批次就保存一次
+    await fs.writeFile("chapters.txt", allContent, "utf8");
+
+    // 打印进度
+    let curChapterNum = i + LIMIT_CONCURRENT_REQUESTS;
+    curChapterNum = curChapterNum >= totalChapters ? totalChapters : curChapterNum;
+    const progress = (curChapterNum / totalChapters) * 100;
     process.stdout.write(`\r处理进度: ${progress.toFixed(2)}%`);
   }
-  process.stdout.write("\n"); // 完成所有章节处理后换行
-
-  // 清理并保存内容
-  const cleanedStr = allContent.replace(
-    /！「如章节缺失请退#出#阅#读#模#式」/g,
-    ""
-  );
-  await fs.writeFile("chapters.txt", cleanedStr, "utf8");
+  process.stdout.write("\n");
 }
 
 async function main() {
@@ -152,7 +115,7 @@ async function main() {
   const argList = process.argv.slice(2); // 获取用户在命令行中输入的参数
   if (argList.length > 0 && argList.includes("test")) {
     // 小范围测试
-    chapterLinks = chapterLinks.slice(-3);
+    chapterLinks = chapterLinks.slice(0, 10);
   }
   await saveToFile(chapterLinks);
   const endTime = Date.now(); // 结束时间记录
