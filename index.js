@@ -1,10 +1,11 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const fs = require("fs").promises;
+const winston = require("winston");
 
 const MAX_DEPTH = 10; // 设定最大递归深度
 const CHAPTER_LIST_URL = "http://m.ggdwx.net/book/107056/chapterlist"; // 列表目录
-const DELAY_MS = 1; // 延迟时间
+const DELAY_MS = 1000; // 延迟时间
 const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 
 // 创建一个带有默认配置的axios实例
@@ -14,6 +15,30 @@ const axiosInstance = axios.create({
     "User-Agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
     Referer: "https://tds-referer-url.com"
   }
+});
+
+// 配置日志
+const logger = winston.createLogger({
+  level: "info", // 设置日志级别，默认为info(silly, debug, verbose, info, warn, error)
+  format: winston.format.combine(
+    // 添加时间戳格式化
+    winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }), // 自定义时间格式
+    // 可以根据需要添加其他格式化选项，如prettyPrint等
+    winston.format.json() // 示例中使用JSON格式输出，也可以根据需要调整
+  ),
+  transports: [
+    // 配置日志输出到文件
+    new winston.transports.File({ filename: "logs/error.log", level: "error" }),
+    new winston.transports.File({ filename: "logs/combined.log" }),
+    new winston.transports.Console({
+      // 为winston添加一个console传输，让我们在控制台也可以看到日志
+      // format: winston.format.simple() // 简单文本格式
+      format: winston.format.combine(
+        winston.format.colorize(), // 颜色高亮不同级别日志
+        winston.format.simple() // 使用简单的文本格式
+      )
+    })
+  ]
 });
 
 // 模拟延迟
@@ -33,16 +58,16 @@ async function fetchChapterList(url) {
       .get();
     return chapterLinks;
   } catch (error) {
-    console.error("Error fetching chapter list:", error);
+    logger.error("Error fetching chapter list:", error);
     return [];
   }
 }
 
 async function fetchChapterContentAndNext(chapterUrl, currentChapterName = "未知章节", depth = 0) {
   if (depth >= MAX_DEPTH) {
-    console.warn(`\n warn 达到最大递归深度 ${MAX_DEPTH}, 停止抓取后续章节.`);
-    console.warn(`\n 错误章节名称:${currentChapterName}`);
-    console.warn(`\n 错误章节地址:${chapterUrl}`);
+    logger.warn(`\n warn 达到最大递归深度 ${MAX_DEPTH}, 停止抓取后续章节.`);
+    logger.warn(`\n 错误章节名称:${currentChapterName}`);
+    logger.warn(`\n 错误章节地址:${chapterUrl}`);
     return "";
   }
   try {
@@ -73,7 +98,7 @@ async function fetchChapterContentAndNext(chapterUrl, currentChapterName = "未�
       return `${content}${nextContent}`;
     }
   } catch (error) {
-    console.error("Error fetching chapter content:", error);
+    logger.error("Error fetching chapter content:", error);
     return "";
   }
 }
@@ -89,7 +114,7 @@ async function saveToFile(chapters) {
     await delay();
 
     const batchResults = await Promise.all(
-      batchPromises.map(p => p.catch(err => console.error(`Error in batch: ${err}`)))
+      batchPromises.map(p => p.catch(err => logger.error(`Error in batch: ${err}`)))
     );
 
     batchResults.forEach(content => {
@@ -115,13 +140,18 @@ async function main() {
   const argList = process.argv.slice(2); // 获取用户在命令行中输入的参数
   if (argList.length > 0 && argList.includes("test")) {
     // 小范围测试
-    chapterLinks = chapterLinks.slice(0, 10);
+    chapterLinks = chapterLinks.slice(-10);
   }
   await saveToFile(chapterLinks);
   const endTime = Date.now(); // 结束时间记录
   const totalTimeInSeconds = (endTime - startTime) / 1000; // 总耗时（秒）
-
-  console.log(`操作完成，总共耗时: ${totalTimeInSeconds.toFixed(2)} 秒`);
+  logger.info(`处理章节数量: ${chapterLinks.length}`);
+  logger.info(`最大递归深度: ${MAX_DEPTH}`);
+  logger.info(`延迟时间: ${DELAY_MS}毫秒`);
+  logger.info(`并发请求的最大数量: ${LIMIT_CONCURRENT_REQUESTS}`);
+  logger.info(`操作完成, 总共耗时: ${totalTimeInSeconds.toFixed(2)} 秒`);
 }
 
-main().catch(console.error);
+main().catch(error => {
+  logger.error("An error occurred during the main execution:", error);
+});
