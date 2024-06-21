@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.2.0](https://github.com/tianxintiandisheng/node-demo/compare/v1.1.0...v1.2.0) (2024-06-21)
+
+
+### ✏️ Documentation | 文档
+
+* **root:** 订正changelog ([c9ef9b2](https://github.com/tianxintiandisheng/node-demo/commit/c9ef9b2e7af86e85805b080dce6b48d03ec78801))
+
+
+### ⚡ Performance Improvements | 性能优化
+
+* **download-text:** 内存管理优化;按批次分割内容写入文件 ([f75db43](https://github.com/tianxintiandisheng/node-demo/commit/f75db4396b097839fa3097ebd2bee18ea80841db))
+
+
+### 👷 Continuous Integration | CI 配置
+
+* **root:** 添加格式化设置 ([44af209](https://github.com/tianxintiandisheng/node-demo/commit/44af209b0bb4dfcfe6b151a62f5be0f8c5b9135d))
+
+
+### ✨ Features | 新功能
+
+* **download-text:** 设置全局的默认请求头,避免被服务器识别为爬虫并拒绝服务 ([94bfd20](https://github.com/tianxintiandisheng/node-demo/commit/94bfd203ff9d12d0ededa87860545ec7ccfa83b3))
+* **download-text:** 增加日志记录 ([e4c0d77](https://github.com/tianxintiandisheng/node-demo/commit/e4c0d771658bd4d938259ad4134a9182ea779aba))
+
 ## 1.1.0 (2024-06-18)
 
 
