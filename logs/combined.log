@@ -39,3 +39,33 @@
 {"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-06-20 11:33:11"}
 {"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-06-20 11:33:11"}
 {"level":"info","message":"操作完成, 总共耗时: 8.60 秒","timestamp":"2024-06-20 11:33:11"}
+{"level":"info","message":"处理章节数量: 0","timestamp":"2024-07-12 10:58:04"}
+{"level":"info","message":"最大递归深度: 10","timestamp":"2024-07-12 10:58:04"}
+{"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-07-12 10:58:04"}
+{"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-07-12 10:58:04"}
+{"level":"info","message":"操作完成, 总共耗时: 0.82 秒","timestamp":"2024-07-12 10:58:04"}
+{"level":"info","message":"处理章节数量: 0","timestamp":"2024-07-12 10:59:17"}
+{"level":"info","message":"最大递归深度: 10","timestamp":"2024-07-12 10:59:17"}
+{"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-07-12 10:59:17"}
+{"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-07-12 10:59:17"}
+{"level":"info","message":"操作完成, 总共耗时: 1.65 秒","timestamp":"2024-07-12 10:59:17"}
+{"level":"info","message":"处理章节数量: 0","timestamp":"2024-07-12 11:02:05"}
+{"level":"info","message":"最大递归深度: 10","timestamp":"2024-07-12 11:02:05"}
+{"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-07-12 11:02:05"}
+{"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-07-12 11:02:05"}
+{"level":"info","message":"操作完成, 总共耗时: 0.49 秒","timestamp":"2024-07-12 11:02:05"}
+{"level":"info","message":"处理章节数量: 10","timestamp":"2024-07-12 11:02:28"}
+{"level":"info","message":"最大递归深度: 10","timestamp":"2024-07-12 11:02:28"}
+{"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-07-12 11:02:28"}
+{"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-07-12 11:02:28"}
+{"level":"info","message":"操作完成, 总共耗时: 2.53 秒","timestamp":"2024-07-12 11:02:28"}
+{"level":"info","message":"处理章节数量: 10","timestamp":"2024-07-12 11:05:22"}
+{"level":"info","message":"最大递归深度: 10","timestamp":"2024-07-12 11:05:22"}
+{"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-07-12 11:05:22"}
+{"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-07-12 11:05:22"}
+{"level":"info","message":"操作完成, 总共耗时: 2.43 秒","timestamp":"2024-07-12 11:05:22"}
+{"level":"info","message":"处理章节数量: 657","timestamp":"2024-07-12 11:14:46"}
+{"level":"info","message":"最大递归深度: 10","timestamp":"2024-07-12 11:14:46"}
+{"level":"info","message":"延迟时间: 1000毫秒","timestamp":"2024-07-12 11:14:46"}
+{"level":"info","message":"并发请求的最大数量: 5","timestamp":"2024-07-12 11:14:46"}
+{"level":"info","message":"操作完成, 总共耗时: 135.46 秒","timestamp":"2024-07-12 11:14:46"}

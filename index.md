@@ -56,20 +56,54 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const fs = require("fs").promises;
+const winston = require("winston");
 
 const MAX_DEPTH = 10; // 设定最大递归深度
 const CHAPTER_LIST_URL = "http://m.biquge.net/book/107056/chapterlist"; // 列表目录
-const DELAY_MS = 1; // 延迟时间
+const DELAY_MS = 1000; // 延迟时间
 const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
+
+// 创建一个带有默认配置的axios实例
+const axiosInstance = axios.create({
+  // 在这里设置全局的默认请求头,避免被服务器识别为爬虫并拒绝服务
+  headers: {
+    "User-Agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+    Referer: "https://tds-referer-url.com"
+  }
+});
+
+// 配置日志
+const logger = winston.createLogger({
+  level: "info", // 设置日志级别，默认为info(silly, debug, verbose, info, warn, error)
+  format: winston.format.combine(
+    // 添加时间戳格式化
+    winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }), // 自定义时间格式
+    // 可以根据需要添加其他格式化选项，如prettyPrint等
+    winston.format.json() // 示例中使用JSON格式输出，也可以根据需要调整
+  ),
+  transports: [
+    // 配置日志输出到文件
+    new winston.transports.File({ filename: "logs/error.log", level: "error" }),
+    new winston.transports.File({ filename: "logs/combined.log" }),
+    new winston.transports.Console({
+      // 为winston添加一个console传输，让我们在控制台也可以看到日志
+      // format: winston.format.simple() // 简单文本格式
+      format: winston.format.combine(
+        winston.format.colorize(), // 颜色高亮不同级别日志
+        winston.format.simple() // 使用简单的文本格式
+      )
+    })
+  ]
+});
 
 // 模拟延迟
 function delay() {
-  return new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+  return new Promise(resolve => setTimeout(resolve, DELAY_MS));
 }
 
 async function fetchChapterList(url) {
   try {
-    const response = await axios.get(url);
+    const response = await axiosInstance.get(url);
     const $ = cheerio.load(response.data);
     const chapterLinks = $("#listsss li a")
       .map((_, elem) => ({
@@ -79,39 +113,31 @@ async function fetchChapterList(url) {
       .get();
     return chapterLinks;
   } catch (error) {
-    console.error("Error fetching chapter list:", error);
+    logger.error("Error fetching chapter list:", error);
     return [];
   }
 }
 
-async function fetchChapterContentAndNext(
-  chapterUrl,
-  currentChapterName = "未知章节",
-  depth = 0
-) {
+async function fetchChapterContentAndNext(chapterUrl, currentChapterName = "未知章节", depth = 0) {
   if (depth >= MAX_DEPTH) {
-    console.warn(`\n warn 达到最大递归深度 ${MAX_DEPTH}, 停止抓取后续章节.`);
-    console.warn(`\n 错误章节名称:${currentChapterName}`);
-    console.warn(`\n 错误章节地址:${chapterUrl}`);
+    logger.warn(`\n warn 达到最大递归深度 ${MAX_DEPTH}, 停止抓取后续章节.`);
+    logger.warn(`\n 错误章节名称:${currentChapterName}`);
+    logger.warn(`\n 错误章节地址:${chapterUrl}`);
     return "";
   }
   try {
-    const response = await axios.get(chapterUrl);
+    const response = await axiosInstance.get(chapterUrl);
     const $ = cheerio.load(response.data);
 
     // 获取当前章节当前页内容
     const content = $(".content dd").text();
 
     // 页面内是否存在下一章的按钮
-    const withNextButton = !!$('.pager a:contains("下一章")')
-      .first()
-      .attr("href");
-    const withEndButton = !!$('.pager a:contains("看完了")')
-      .first()
-      .attr("href");
+    const withNextButton = !!$('.pager a:contains("下一章")').first().attr("href");
+    const withEndButton = !!$('.pager a:contains("看完了")').first().attr("href");
     if (withNextButton || withEndButton) {
       // 下一章的按钮存在，说明当前章节已结束
-      return `${currentChapterName}\n\n${content}`;
+      return `${currentChapterName}${content}`;
     } else {
       // 下一章的按钮不存在，继续请求下一页的内容
       var parts = chapterUrl.split(/(\/[^\/]+)\.html$/);
@@ -123,122 +149,108 @@ async function fetchChapterContentAndNext(
         nextPageKey = `${urlArr[0]}_2`;
       }
       const nextPageLink = `${parts[0]}${nextPageKey}.html`;
-      const nextContent = await fetchChapterContentAndNext(
-        nextPageLink,
-        currentChapterName,
-        depth + 1
-      );
-      return `${content}\n\n---\n\n${nextContent}`;
+      const nextContent = await fetchChapterContentAndNext(nextPageLink, currentChapterName, depth + 1);
+      return `${content}${nextContent}`;
     }
   } catch (error) {
-    console.error("Error fetching chapter content:", error);
+    logger.error("Error fetching chapter content:", error);
     return "";
   }
 }
 
 async function saveToFile(chapters) {
   const totalChapters = chapters.length;
-  const allContentPromises = [];
+  const allContentPromises = chapters.map(item => fetchChapterContentAndNext(item.url, item.chapterName));
 
-  // 预先创建所有章节内容的Promise数组
-  for (let index = 0; index < totalChapters; index++) {
-    const item = chapters[index];
-    allContentPromises.push(
-      fetchChapterContentAndNext(item.url, item.chapterName)
-    );
-  }
+  let allContent = ""; // 使用allContent累积内容
 
-  // 使用Promise.all分批次处理Promise数组，控制并发数量
-  let allContent = "";
-  for (
-    let i = 0;
-    i < allContentPromises.length;
-    i += LIMIT_CONCURRENT_REQUESTS
-  ) {
-    // 取出一批Promise进行并发处理
-    const batchPromises = allContentPromises.slice(
-      i,
-      i + LIMIT_CONCURRENT_REQUESTS
-    );
+  for (let i = 0; i < allContentPromises.length; i += LIMIT_CONCURRENT_REQUESTS) {
+    const batchPromises = allContentPromises.slice(i, i + LIMIT_CONCURRENT_REQUESTS);
     await delay();
+
     const batchResults = await Promise.all(
-      batchPromises.map((p) =>
-        p.catch((err) => console.error(`Error in batch: ${err}`))
-      )
+      batchPromises.map(p => p.catch(err => logger.error(`Error in batch: ${err}`)))
     );
 
-    // 将这批结果合并到allContent中
-    batchResults.forEach((content) => {
-      allContent += content || ""; // 确保错误处理后的内容仍能合并
+    batchResults.forEach(content => {
+      allContent += content || "";
     });
 
-    // 计算并打印进度
-    const progress = ((i + LIMIT_CONCURRENT_REQUESTS) / totalChapters) * 100;
+    // 使用allContent写入文件，每次完成一个批次就保存一次
+    await fs.writeFile("chapters.txt", allContent, "utf8");
+
+    // 打印进度
+    let curChapterNum = i + LIMIT_CONCURRENT_REQUESTS;
+    curChapterNum = curChapterNum >= totalChapters ? totalChapters : curChapterNum;
+    const progress = (curChapterNum / totalChapters) * 100;
     process.stdout.write(`\r处理进度: ${progress.toFixed(2)}%`);
   }
-  process.stdout.write("\n"); // 完成所有章节处理后换行
-
-  // 清理并保存内容
-  const cleanedStr = allContent.replace(
-    /！「如章节缺失请退#出#阅#读#模#式」/g,
-    ""
-  );
-  await fs.writeFile("chapters.txt", cleanedStr, "utf8");
+  process.stdout.write("\n");
 }
 
 async function main() {
   const startTime = Date.now(); // 开始时间记录
 
-  const chapterLinks = await fetchChapterList(CHAPTER_LIST_URL);
-  // const chapterLinksTest = chapterLinks.slice(-2); // 小范围测试
-  // console.log("🚀 ~ main ~ chapterLinks_test:", chapterLinksTest);
+  let chapterLinks = await fetchChapterList(CHAPTER_LIST_URL);
+  const argList = process.argv.slice(2); // 获取用户在命令行中输入的参数
+  if (argList.length > 0 && argList.includes("test")) {
+    // 小范围测试
+    chapterLinks = chapterLinks.slice(-10);
+  }
   await saveToFile(chapterLinks);
   const endTime = Date.now(); // 结束时间记录
   const totalTimeInSeconds = (endTime - startTime) / 1000; // 总耗时（秒）
-
-  console.log(`操作完成，总共耗时: ${totalTimeInSeconds.toFixed(2)} 秒`);
+  logger.info(`处理章节数量: ${chapterLinks.length}`);
+  logger.info(`最大递归深度: ${MAX_DEPTH}`);
+  logger.info(`延迟时间: ${DELAY_MS}毫秒`);
+  logger.info(`并发请求的最大数量: ${LIMIT_CONCURRENT_REQUESTS}`);
+  logger.info(`操作完成, 总共耗时: ${totalTimeInSeconds.toFixed(2)} 秒`);
 }
 
-main().catch(console.error);
+main().catch(error => {
+  logger.error("An error occurred during the main execution:", error);
+});
 
 ```
 
-# 代码分析
-> 代码分析来自“通义千问”
+# 代码结构和流程
+> 代码分析来自“通义千问”（q:为我提供代码结构和流程分析）
 
-这段JavaScript代码使用了`axios`、`cheerio`和Node.js的文件系统模块`fs`来实现了一个小说爬虫程序，其主要功能是从一个在线小说网站抓取章节列表及其内容，并将这些内容保存到本地文件中。下面是详细的流程分析与注释解释：
+该代码是一个Node.js应用程序，主要目的是爬取一个网络小说网站上的章节列表和章节内容，然后将所有章节内容合并并保存到本地文件中。下面是对代码结构和流程的详细分析：
 
-## 代码结构
-### 初始化与配置
-- 引入必要的模块：`axios`用于发送HTTP请求，`cheerio`用于解析HTML文档，以及Node.js的异步文件系统模块`fs.promises`用于文件操作。
-- 定义几个关键常量：`MAX_DEPTH`限制递归深度以防止无限循环，`CHAPTER_LIST_URL`为目标小说的章节列表页面地址，`DELAY_MS`是请求之间的延迟时间（单位：毫秒），`LIMIT_CONCURRENT_REQUESTS`限制并发请求的数量以减轻服务器压力。
+### 代码结构
 
-### 辅助函数
-- `delay()`函数：用于在请求之间引入延迟，以遵守网站的访问规则和避免被封禁。
-  
-### 数据获取
-- `fetchChapterList(url)`：此函数负责获取章节列表页面的HTML内容，然后使用`cheerio`解析出每一章的标题和链接，最后以对象数组形式返回章节信息。
-  
-### 内容抓取与递归
-- `fetchChapterContentAndNext(chapterUrl, currentChapterName, depth)`：这是核心函数，负责递归地获取单个章节的全部内容。它首先尝试获取章节的HTML内容，接着检查是否有“下一章”的链接。如果有，则根据URL结构递归调用自身以获取下一章的内容；如果没有，则返回当前章节的内容。递归深度由`MAX_DEPTH`限制，超出则停止抓取并给出警告。
+1. **依赖导入**: 导入了`axios`用于发起HTTP请求，`cheerio`用于解析HTML文档，`fs.promises`用于文件的异步读写操作，以及`winston`作为日志记录工具。
 
-### 文件保存
-- `saveToFile(chapters)`：此函数遍历章节列表，为每个章节发起内容抓取请求。为了管理并发，使用`LIMIT_CONCURRENT_REQUESTS`限制每次处理的请求数量，并使用`Promise.all`来批量处理这些请求。章节内容经处理后（去除不需要的部分），最终写入到名为`chapters.txt`的文件中。
+2. **全局配置**:
+   - **axios实例配置**: 设置了默认的请求头，模拟浏览器访问以避免被服务器拒绝。
+   - **日志配置**: 定义了日志记录的格式、级别以及输出目的地（文件和控制台）。
+   - **常量定义**: 包括最大递归深度、章节列表URL、请求间隔时间、并发请求限制等。
 
-### 主函数与执行
-- `main()`：程序的入口点，它首先记录开始时间，然后调用`fetchChapterList`获取章节列表，再调用`saveToFile`处理并保存章节内容，最后计算并打印整个操作的总耗时。
+3. **辅助函数**:
+   - **delay**: 异步函数，用于在请求间增加延迟，以减轻服务器压力。
+   - **fetchChapterList**: 根据给定的URL获取章节列表，使用`cheerio`解析页面内容，提取章节标题和链接。
+   - **fetchChapterContentAndNext**: 递归函数，用于获取章节内容，若章节有“下一章”，则递归抓取，直到达到最大递归深度或无下一章。
+   - **saveToFile**: 异步函数，将所有章节内容整合并分批次保存到本地文件，同时控制并发量并显示进度。
 
-### 异常处理
-- 整个程序通过`.catch(console.error)`确保任何未捕获的异常都能被打印出来，以便于调试和监控。
+4. **主函数** (`main`):
+   - 获取命令行参数，判断是否进行测试模式（只抓取部分章节）。
+   - 调用`fetchChapterList`获取章节列表。
+   - 使用`saveToFile`异步处理章节列表，抓取内容并写入文件。
+   - 计算并记录总耗时。
+   - 全局错误处理，捕获并记录执行过程中可能出现的错误。
 
-## 流程总结
-1. **准备阶段**：设置配置项，导入依赖。
-2. **获取章节列表**：通过`fetchChapterList`获取小说的所有章节链接。
-3. **内容抓取**：利用`fetchChapterContentAndNext`递归地抓取每个章节的详细内容，同时控制递归深度和并发请求量以优化性能和尊重网站规则。
-4. **内容保存**：在`saveToFile`中整理抓取到的所有章节内容，清理不必要的信息，并将其保存到本地文件。
-5. **完成与统计**：记录程序运行的总耗时，并通知用户操作已完成。
+### 流程分析
 
-整个过程体现了对目标网站数据的自动化采集、处理与存储，展现了网络爬虫的基本工作原理。
+1. **初始化**: 设置好所有必要的配置和工具。
+2. **章节列表获取**: 首先调用`fetchChapterList`函数获取小说的章节列表。
+3. **内容抓取与整合**:
+   - 对每个章节，使用`fetchChapterContentAndNext`递归抓取章节内容，直至达到最大深度或无下一章。
+   - 使用`saveToFile`函数，分批次并发处理章节内容的抓取，控制并发数以避免对服务器造成过大压力，同时实时更新本地文件内容。
+4. **进度与日志**: 在处理过程中，通过控制台输出进度条，并通过`winston`记录日志，包括错误信息、警告和操作完成信息。
+5. **结束与统计**: 爬取完成后，计算并打印总耗时，以及处理的章节总数、最大递归深度、延迟时间、并发请求数等统计信息。
+
+整体而言，代码结构清晰，遵循了良好的编程实践，通过模块化设计使得各个功能部分职责明确，易于理解和维护。通过精心设计的并发控制和错误处理机制，提高了爬虫的稳定性和效率。
 
 # 深度思考
 
@@ -281,3 +293,46 @@ async function saveToFile(chapters) {
 处理进度: 100.00%  当前处理--第九十一话 剑指下一届
 操作完成，总共耗时: 1270.63 秒
 ```
+
+# changelog
+
+## 1.2.0 (2024-06-21)
+
+
+### ✏️ Documentation | 文档
+
+* **root:** 订正changelog ([c9ef9b2](https://github.com/tds/node-demo/commit/c9ef9b2e7af86e85805b080dce6b48d03ec78801))
+
+
+### ⚡ Performance Improvements | 性能优化
+
+* **download-text:** 内存管理优化;按批次分割内容写入文件 ([f75db43](https://github.com/tds/node-demo/commit/f75db4396b097839fa3097ebd2bee18ea80841db))
+
+
+### 👷 Continuous Integration | CI 配置
+
+* **root:** 添加格式化设置 ([44af209](https://github.com/tds/node-demo/commit/44af209b0bb4dfcfe6b151a62f5be0f8c5b9135d))
+
+
+### ✨ Features | 新功能
+
+* **download-text:** 设置全局的默认请求头,避免被服务器识别为爬虫并拒绝服务 ([94bfd20](https://github.com/tds/node-demo/commit/94bfd203ff9d12d0ededa87860545ec7ccfa83b3))
+* **download-text:** 增加日志记录 ([e4c0d77](https://github.com/tds/node-demo/commit/e4c0d771658bd4d938259ad4134a9182ea779aba))
+
+## 1.1.0 (2024-06-18)
+
+
+### ✏️ Documentation | 文档
+
+* **download-text:** 文章备份 ([bcdb010](https://github.com/tds/node-demo/commit/bcdb010b78cea5e6e1a394929c0373bc8e65a0fa))
+* **root:** 更新 readme 文件 ([edf6f74](https://github.com/tds/node-demo/commit/edf6f744ddb856706e6d3f8eb463b92084acbdef))
+
+
+### ✨ Features | 新功能
+
+* **download-text:** 方法初始化 ([09b9afa](https://github.com/tds/node-demo/commit/09b9afa4968aa83524756be45c3e0042666ed2ff))
+* **download-text:** 添加并发 ([ac4a447](https://github.com/tds/node-demo/commit/ac4a447a6c234db22fb92fa0b79d22e2f0dc7ae2))
+* **download-text:** 解析用户在命令行中输入的参数;增加测试的命令 ([0c785e5](https://github.com/tds/node-demo/commit/0c785e532723711f7ffd9782f5f9db8ab03631d4))
+* **root:** 更新eslint以及git配置 ([ebc254a](https://github.com/tds/node-demo/commit/ebc254ae56fbf97d13faef8dfa932695a90b8927))
+* **root:** 项目添加生成修改日志的功能 ([ee2ab3f](https://github.com/tds/node-demo/commit/ee2ab3fbd383a14b9837663eccbed8bfd7786d03))
+

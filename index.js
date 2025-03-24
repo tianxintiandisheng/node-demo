@@ -4,7 +4,7 @@ const fs = require("fs").promises;
 const winston = require("winston");
 
 const MAX_DEPTH = 10; // 设定最大递归深度
-const CHAPTER_LIST_URL = "http://m.ggdwx.net/book/107056/chapterlist"; // 列表目录
+const CHAPTER_LIST_URL = "http://www.xtangsanshu.com/zaoansanguodagongren/"; // 列表目录
 const DELAY_MS = 1000; // 延迟时间
 const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 
@@ -50,10 +50,10 @@ async function fetchChapterList(url) {
   try {
     const response = await axiosInstance.get(url);
     const $ = cheerio.load(response.data);
-    const chapterLinks = $("#listsss li a")
+    const chapterLinks = $(".listmain dl dd a")
       .map((_, elem) => ({
         chapterName: $(elem).text(),
-        url: $(elem).attr("href")
+        url: "http://www.xtangsanshu.com" + $(elem).attr("href")
       }))
       .get();
     return chapterLinks;
@@ -63,6 +63,10 @@ async function fetchChapterList(url) {
   }
 }
 
+/**
+ * @function 递归获取每一章节内容
+ * @description 每一章节内容是分页展示，需要递归拼接
+ */
 async function fetchChapterContentAndNext(chapterUrl, currentChapterName = "未知章节", depth = 0) {
   if (depth >= MAX_DEPTH) {
     logger.warn(`\n warn 达到最大递归深度 ${MAX_DEPTH}, 停止抓取后续章节.`);
@@ -103,9 +107,26 @@ async function fetchChapterContentAndNext(chapterUrl, currentChapterName = "未�
   }
 }
 
+/**
+ * @function 获取章节内容
+ * @description 每一章节内容是完整的
+ */
+async function fetchChapterContent(chapterUrl, currentChapterName = "未知章节") {
+  try {
+    const response = await axiosInstance.get(chapterUrl);
+    const $ = cheerio.load(response.data);
+    // 获取当前章节当前页内容
+    const content = $(".showtxt").text();
+    return `${currentChapterName}\n${content}`;
+  } catch (error) {
+    logger.error("Error fetching chapter content:", error);
+    return "";
+  }
+}
+
 async function saveToFile(chapters) {
   const totalChapters = chapters.length;
-  const allContentPromises = chapters.map(item => fetchChapterContentAndNext(item.url, item.chapterName));
+  const allContentPromises = chapters.map(item => fetchChapterContent(item.url, item.chapterName));
 
   let allContent = ""; // 使用allContent累积内容
 
@@ -140,8 +161,10 @@ async function main() {
   const argList = process.argv.slice(2); // 获取用户在命令行中输入的参数
   if (argList.length > 0 && argList.includes("test")) {
     // 小范围测试
-    chapterLinks = chapterLinks.slice(-10);
+    chapterLinks = chapterLinks.slice(12);
+
   }
+  console.log("🚀 ~ main ~ chapterLinks:", chapterLinks);
   await saveToFile(chapterLinks);
   const endTime = Date.now(); // 结束时间记录
   const totalTimeInSeconds = (endTime - startTime) / 1000; // 总耗时（秒）
