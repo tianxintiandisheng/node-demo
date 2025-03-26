@@ -1,11 +1,14 @@
 const axios = require("axios");
-const cheerio = require("cheerio");
 const fs = require("fs").promises;
 const winston = require("winston");
 
 const MAX_DEPTH = 10; // 设定最大递归深度
-const CHAPTER_LIST_URL = "http://www.xtangsanshu.com/zaoansanguodagongren/"; // 列表目录
-const DELAY_MS = 1000; // 延迟时间
+const DELAY_MS = 1000; // 设定最大递归深度
+const DOMAIN_NAME = "https://tds-referer-url.com"; // 请求域名
+
+const REQUEST_URL_GET_LIST = `${DOMAIN_NAME}/api/getList`; // 列表目录
+const REQUEST_URL_GET_DETAIL = `${DOMAIN_NAME}/api/detail`; 
+const REQUEST_URL_EDIT_DETAIL = `${DOMAIN_NAME}/api/edit`; // 列表目录
 const LIMIT_CONCURRENT_REQUESTS = 5; // 设置并发请求的最大数量
 
 // 创建一个带有默认配置的axios实例
@@ -13,7 +16,14 @@ const axiosInstance = axios.create({
   // 在这里设置全局的默认请求头,避免被服务器识别为爬虫并拒绝服务
   headers: {
     "User-Agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
-    Referer: "https://tds-referer-url.com"
+    Referer: "https://tds-referer-url.com",
+    "X-Access-Lang": "zh-cn",
+    Authorization:
+      "Authorization",
+    "X-Ca-Exhibition-Id": "123",
+    "X-Ca-Tenant-Id": "456",
+    "X-Ca-Group-Id": "789",
+    "X-Ca-Brand-Id": "000"
   }
 });
 
@@ -41,26 +51,48 @@ const logger = winston.createLogger({
   ]
 });
 
+/**
+ * @function 全局接口报错处理
+ * @dsc handling error in response interceptor
+ * */
+const HandleErr = async response => {
+  const data = await response.data;
+  // 权限失效处理
+  if (data && !data.success) {
+    if (data.errMsg) {
+      logger.error(`HandleErr-接口异常:${data.errMsg}`);
+    } else {
+      logger.error("HandleErr-未知错误");
+    }
+    return response;
+  }
+
+  return response;
+};
+
+// 响应拦截器
+axiosInstance.interceptors.response.use(HandleErr);
+
 // 模拟延迟
 function delay() {
   return new Promise(resolve => setTimeout(resolve, DELAY_MS));
 }
 /**
  * @function 获取列表
- * */ 
-async function fetchChapterList(url) {
+ * */
+async function fetchChapterList() {
   try {
-    const response = await axiosInstance.get(url);
-    const $ = cheerio.load(response.data);
-    const chapterLinks = $(".listmain dl dd a")
-      .map((_, elem) => ({
-        chapterName: $(elem).text(),
-        url: "http://www.xtangsanshu.com" + $(elem).attr("href")
-      }))
-      .get();
-    return chapterLinks;
+    const response = await axiosInstance.get(REQUEST_URL_GET_LIST, {
+      pageNum: 1,
+      pageSize: 999
+    });
+    const list = response.data.resultInfo.records;
+    if (Array.isArray(list)) {
+      return list;
+    }
+    return [];
   } catch (error) {
-    logger.error("Error fetching chapter list:", error);
+    logger.error("Error-获取列表:", error);
     return [];
   }
 }
@@ -69,27 +101,53 @@ async function fetchChapterList(url) {
  * @function 获取展商详情内容
  * @description 每一章节内容是完整的
  */
-async function fetchChapterContent(chapterUrl, currentChapterName = "未知章节") {
+async function fetchChapterContent(exhibitorId, exhibitorName) {
   try {
-    const response = await axiosInstance.get(chapterUrl);
-    const $ = cheerio.load(response.data);
-    // 获取当前章节当前页内容
-    const content = $(".showtxt").text();
-    return `${currentChapterName}\n${content}`;
+    const response = await axiosInstance.get(
+      `${REQUEST_URL_GET_DETAIL}/${exhibitorId}`
+    );
+    // const $ = cheerio.load(response.data);
+    // 获取当前展商图文介绍
+    return {
+      exhibitorId,
+      exhibitorName,
+      exhibitorDescriptionImage: response.data.resultInfo.exhibitorDescriptionImage
+    };
   } catch (error) {
     logger.error("Error fetching chapter content:", error);
+    return undefined;
+  }
+}
+
+/**
+ * @function 修改展商详情内容
+ * @description 每一章节内容是完整的
+ */
+async function editChapterContent(params) {
+  try {
+    const response = await axiosInstance.put(
+      REQUEST_URL_EDIT_DETAIL,
+      params
+    );
+    // 获取当前展商图文介绍
+    return {
+      exhibitorId: params.exhibitorId,
+      success: response.data.success
+    };
+  } catch (error) {
+    logger.error("修改展商详情内容-editChapterContent:", error);
     return "";
   }
 }
 
 /**
- * @function 循环调用编辑接口
-*/
+ * @function 循环调用查询详情接口
+ */
 async function saveToFile(chapters) {
   const totalChapters = chapters.length;
-  const allContentPromises = chapters.map(item => fetchChapterContent(item.url, item.chapterName));
+  const allContentPromises = chapters.map(item => fetchChapterContent(item.exhibitorId, item.organizationName));
 
-  let allContent = ""; // 使用allContent累积内容
+  let allContent = []; // 使用allContent累积内容
 
   for (let i = 0; i < allContentPromises.length; i += LIMIT_CONCURRENT_REQUESTS) {
     const batchPromises = allContentPromises.slice(i, i + LIMIT_CONCURRENT_REQUESTS);
@@ -99,12 +157,41 @@ async function saveToFile(chapters) {
       batchPromises.map(p => p.catch(err => logger.error(`Error in batch: ${err}`)))
     );
 
-    batchResults.forEach(content => {
-      allContent += content || "";
-    });
+    allContent = [...allContent, ...batchResults];
 
     // 使用allContent写入文件，每次完成一个批次就保存一次
-    await fs.writeFile("chapters.txt", allContent, "utf8");
+    await fs.writeFile("chapters.text", JSON.stringify(allContent), "utf8");
+
+    // 打印进度
+    let curChapterNum = i + LIMIT_CONCURRENT_REQUESTS;
+    curChapterNum = curChapterNum >= totalChapters ? totalChapters : curChapterNum;
+    const progress = (curChapterNum / totalChapters) * 100;
+    process.stdout.write(`\r处理进度: ${progress.toFixed(2)}%`);
+  }
+  process.stdout.write("\n");
+}
+
+/**
+ * @function 循环调用编辑详情接口
+ */
+async function forEditFile(chapters) {
+  const totalChapters = chapters.length;
+  const allContentPromises = chapters.map(item => editChapterContent(item.exhibitorId, item.organizationName));
+
+  let allContent = []; // 使用allContent累积内容
+
+  for (let i = 0; i < allContentPromises.length; i += LIMIT_CONCURRENT_REQUESTS) {
+    const batchPromises = allContentPromises.slice(i, i + LIMIT_CONCURRENT_REQUESTS);
+    await delay();
+
+    const batchResults = await Promise.all(
+      batchPromises.map(p => p.catch(err => logger.error(`Error in batch: ${err}`)))
+    );
+
+    allContent = [...allContent, ...batchResults];
+
+    // 使用allContent写入文件，每次完成一个批次就保存一次
+    await fs.writeFile("chapters_edit.text", JSON.stringify(allContent), "utf8");
 
     // 打印进度
     let curChapterNum = i + LIMIT_CONCURRENT_REQUESTS;
@@ -118,18 +205,19 @@ async function saveToFile(chapters) {
 async function main() {
   const startTime = Date.now(); // 开始时间记录
 
-  let chapterLinks = await fetchChapterList(CHAPTER_LIST_URL);
+  let chapterLinks = await fetchChapterList();
   const argList = process.argv.slice(2); // 获取用户在命令行中输入的参数
   if (argList.length > 0 && argList.includes("test")) {
     // 小范围测试
     chapterLinks = chapterLinks.slice(12);
-
   }
   console.log("🚀 ~ main ~ chapterLinks:", chapterLinks);
-  await saveToFile(chapterLinks);
+  const list = await saveToFile(chapterLinks);
+  await forEditFile(list);
   const endTime = Date.now(); // 结束时间记录
   const totalTimeInSeconds = (endTime - startTime) / 1000; // 总耗时（秒）
-  logger.info(`处理数量: ${chapterLinks.length}`);
+  logger.info(`总数: ${chapterLinks.length}`);
+  logger.info(`需要处理数量: ${list.length}`);
   logger.info(`最大递归深度: ${MAX_DEPTH}`);
   logger.info(`延迟时间: ${DELAY_MS}毫秒`);
   logger.info(`并发请求的最大数量: ${LIMIT_CONCURRENT_REQUESTS}`);
